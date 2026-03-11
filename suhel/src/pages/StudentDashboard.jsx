@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabaseClient';
 import { calculateDriftScore, getRiskClassification, getRiskColor } from '../lib/driftCalculator';
 import Navbar from '../components/Navbar';
 import { PerformanceLineChart } from '../components/Charts';
-import { Target, Clock, RotateCcw } from 'lucide-react';
+import { Target, Clock, RotateCcw, Lightbulb, Users, PlayCircle } from 'lucide-react';
 
 export default function StudentDashboard() {
     const [user, setUser] = useState(null);
@@ -19,6 +19,8 @@ export default function StudentDashboard() {
         driftScore: 0,
         riskLevel: 'Stable'
     });
+    const [recommendations, setRecommendations] = useState([]);
+    const [classMetrics, setClassMetrics] = useState({ accuracy: 0.75, avgTime: 45 }); // Fallback mock defaults
 
     useEffect(() => {
         fetchData();
@@ -55,6 +57,17 @@ export default function StudentDashboard() {
 
                     setInteractions(interactionData || []);
                     calculateMetrics(interactionData || []);
+
+                    // Fetch Class Benchmarks (Point 4)
+                    const { data: allData } = await supabase
+                        .from('interactions')
+                        .select('correct, time_taken');
+                    
+                    if (allData && allData.length > 0) {
+                        const classAcc = allData.filter(d => d.correct).length / allData.length;
+                        const classTime = allData.reduce((acc, curr) => acc + curr.time_taken, 0) / allData.length;
+                        setClassMetrics({ accuracy: classAcc, avgTime: classTime });
+                    }
                 }
             }
         } catch (error) {
@@ -83,6 +96,17 @@ export default function StudentDashboard() {
             driftScore,
             riskLevel
         });
+
+        // Generate Recommendations (Point 3)
+        const recentMistakes = [...data].reverse().filter(i => !i.correct).slice(0, 3);
+        const generatedRecs = recentMistakes.map(m => ({
+            id: m.id,
+            questionId: m.question_id ? m.question_id.split('-')[0] : 'Unknown',
+            topic: m.question_id ? `Concept ${m.question_id.split('-')[0]}` : 'General Review', 
+            type: 'Review Module',
+            action: 'Start Review'
+        }));
+        setRecommendations(generatedRecs);
     };
 
     if (loading) return (
@@ -136,6 +160,75 @@ export default function StudentDashboard() {
                         <p className="text-3xl font-bold text-slate-800">{metrics.avgRetries.toFixed(1)}</p>
                     </div>
 
+                </div>
+
+                {/* Insights & Recommendations Row (Points 3 & 4) */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Peer Benchmarking */}
+                    <div className="glass-card p-6 flex flex-col space-y-4">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-indigo-50 rounded-lg">
+                                <Users className="w-5 h-5 text-indigo-600" />
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-800">Peer Benchmarking</h3>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 mt-2">
+                            <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-100">
+                                <p className="text-sm text-slate-500 mb-1">Your Accuracy vs Class</p>
+                                <div className="flex items-end gap-2">
+                                    <span className="text-2xl font-bold text-slate-800">{(metrics.accuracy * 100).toFixed(0)}%</span>
+                                    <span className="text-sm text-slate-400 mb-1">/ {(classMetrics.accuracy * 100).toFixed(0)}%</span>
+                                </div>
+                                <p className={`text-xs mt-2 font-medium ${metrics.accuracy >= classMetrics.accuracy ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                    {metrics.accuracy >= classMetrics.accuracy ? '↑ Above Class Average' : '↓ Below Class Average'}
+                                </p>
+                            </div>
+                            <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-100">
+                                <p className="text-sm text-slate-500 mb-1">Your Speed vs Class</p>
+                                <div className="flex items-end gap-2">
+                                    <span className="text-2xl font-bold text-slate-800">{metrics.avgTime.toFixed(1)}s</span>
+                                    <span className="text-sm text-slate-400 mb-1">/ {classMetrics.avgTime.toFixed(1)}s</span>
+                                </div>
+                                <p className={`text-xs mt-2 font-medium ${metrics.avgTime <= classMetrics.avgTime ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                    {metrics.avgTime <= classMetrics.avgTime ? '↑ Faster than Average' : '↓ Slower than Average'}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* AI Recommendations */}
+                    <div className="glass-card p-6 flex flex-col space-y-4">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-amber-50 rounded-lg">
+                                <Lightbulb className="w-5 h-5 text-amber-600" />
+                            </div>
+                            <div className="flex-1">
+                                <h3 className="text-lg font-bold text-slate-800">Smart Recommendations</h3>
+                            </div>
+                        </div>
+                        <div className="flex-1 flex flex-col justify-center space-y-3">
+                            {recommendations.length > 0 ? recommendations.map((rec, idx) => (
+                                <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl hover:shadow-sm transition-shadow">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-blue-50 text-blue-600 rounded-full">
+                                            <PlayCircle className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-bold text-slate-800">Review {rec.topic}</p>
+                                            <p className="text-xs text-slate-500">Based on recent incorrect answer (Q-{rec.questionId})</p>
+                                        </div>
+                                    </div>
+                                    <button className="text-xs font-semibold px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors">
+                                        {rec.action}
+                                    </button>
+                                </div>
+                            )) : (
+                                <div className="text-center py-4">
+                                    <p className="text-sm text-slate-500">Great job! No pressing recommendations right now.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
 
                 {/* Main Info Grid - Charts */}
